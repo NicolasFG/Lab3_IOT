@@ -1,0 +1,100 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+// Pines del sensor
+const int trigPin = 5;
+const int echoPin = 18;
+
+// Configuración de la red WiFi
+const char* ssid = "CGA2121_4TAW324";
+const char* password = "388SsLWaZxQYkd49bg";
+
+// Configuración del broker MQTT
+const char* mqtt_server = "192.168.0.18";
+const char* mqtt_topic = "sensor/proximidad";
+
+// Crear instancias de WiFi y MQTT
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+long duration;
+int distance;
+const int max_attempts = 20;
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+
+  setup_wifi();
+  client.setServer(mqtt_server, 1883);
+}
+
+void loop() {
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+
+  // Enviar pulso de disparo
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  // Leer el pulso de eco
+  duration = pulseIn(echoPin, HIGH);
+  
+  // Calcular la distancia en cm
+  distance = duration * 0.034 / 2;
+
+  // Publicar la distancia en el tema MQTT
+  char msg[50];
+  sprintf(msg, "Distancia: %d cm", distance);
+  client.publish(mqtt_topic, msg);
+
+  delay(2000); // Esperar 2 segundos antes de la siguiente lectura
+}
+
+void setup_wifi() {
+  delay(10);
+  Serial.println();
+  Serial.print("Conectando a ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < max_attempts) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("");
+    Serial.println("WiFi conectado");
+    Serial.print("Dirección IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("");
+    Serial.println("No se pudo conectar a la red WiFi.");
+    // Opcional: Reiniciar el ESP32 si no se puede conectar
+    ESP.restart();
+  }
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Intentando conexión MQTT...");
+    if (client.connect("ESP32Client")) {
+      Serial.println("conectado");
+    } else {
+      Serial.print("fallo, rc=");
+      Serial.print(client.state());
+      Serial.println(" intentamos de nuevo en 5 segundos");
+      delay(5000);
+    }
+  }
+}
